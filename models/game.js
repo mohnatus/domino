@@ -1,43 +1,33 @@
-let unique = 1;
+const Player = require('./player');
+const Pair = require('./pair');
 
-const GAME_READY_EVENT = 'game.events.ready';
-const GAME_OPPONENT_CONFIRM_EVENT = 'game.events.opponent.confirm';
-const GAME_OPPONENT_GONE_EVENT = 'game.events.opponent.gone';
+const gameEvents = require('../data/game.events');
+const playerEvents = require('../data/player.events');
 
 module.exports = class Game {
-  constructor(player1, player2) {
-    this._id = unique++;
-    this._player1 = player1;
-    this._player2 = player2;
-
-    player1.game = this._id;
-    player2.game = this._id;
-
-    this.handlePlayer(player1, player2);
-    this.handlePlayer(player2, player1);
+  constructor() {
+    this.players = [];
+    this.waiting = [];
+    this.pairs = [];
   }
 
-  handlePlayer(player, opponent) {
-    player.emitEvent(GAME_READY_EVENT, {
-      opponent: {
-        id: opponent.id
-      }
+  addConnection(socket) {
+    let player = new Player(socket);
+    this.players.push(player);
+
+    player.on(playerEvents.DISCONNECTED, () => {
+      let index = this.players.findIndex((p) => p === player);
+      this.players.splice(index, 1);
     });
 
-    player.on('confirm', () => {
-      if (opponent.confirm) {
-        this.start();
+    player.on(playerEvents.FIND_OPPONENT, () => {
+      if (this.waiting.length) {
+        let player2 = this.waiting.shift();
+        let pair = new Pair(player, player2);
+        this.pairs.push(pair);
       } else {
-        opponent.emitEvent(GAME_OPPONENT_CONFIRM_EVENT);
+        this.waiting.push(player);
       }
-    })
-  }
-
-  get id() {
-    return this._id;
-  }
-
-  start() {
-
+    });
   }
 };

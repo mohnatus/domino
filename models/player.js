@@ -1,9 +1,9 @@
 const ee = require('event-emitter');
+const states = require('../data/player.states');
+const playerEvents = require('../data/player.events');
+const gameEvents = require('../data/game.events');
 
 let unique = 1;
-
-const PLAYER_INIT_EVENT = 'player.events.init';
-const PLAYER_CONFIRM_EVENT = 'player.events.confirm';
 
 module.exports = class Player {
   constructor(socket) {
@@ -12,16 +12,54 @@ module.exports = class Player {
     this._id = unique++;
     this._socket = socket;
     this._game = null;
-    this.confirm = false;
 
-    this.emitEvent(PLAYER_INIT_EVENT, {
+    this._state = states.PASSIVE;
+
+    this.emitEvent(playerEvents.INIT, {
       id: this._id
     });
 
-    this._socket.on(PLAYER_CONFIRM_EVENT, () => {
-      this.confirm = true;
-      this.emit('confirm');
+    // Кнопка Искать соперника
+    this._socket.on(playerEvents.FIND_OPPONENT, () => {
+      this.state = states.WAITING_OPPONENT;
+      this.emit(playerEvents.FIND_OPPONENT);
     });
+
+    // Соперник найден
+    this.on(gameEvents.OPPONENT_FOUND, (data) => {
+      this.emitEvent(gameEvents.OPPONENT_FOUND, data);
+      this.state = states.WAITING_CONFIRM;
+    });
+
+    // Подтвердить участие
+    this._socket.on(gameEvents.PLAYER_CONFIRM, () => {
+      this.emit(gameEvents.PLAYER_CONFIRM, () => this.state = states.WAITING_OPPONENT_CONFIRM);
+    });
+
+    // Противник подтвердил участие
+    this.on(gameEvents.OPPONENT_CONFIRM, () => {
+      this.emitEvent(gameEvents.OPPONENT_CONFIRM);
+    });
+
+    // Противник подтвердил участие
+    this.on(gameEvents.START, () => {
+      this.state = states.ACTIVE;
+    });
+
+    // Противник вышел из игры
+    this.on(gameEvents.OPPONENT_GONE, () => {
+      // TODO
+      this.state = states.PASSIVE;
+    });
+
+    // Игрок отключился
+    this._socket.on('disconnect', () => {
+      this.emit(playerEvents.DISCONNECTED);
+    });
+  }
+
+  emitEvent(eventName, eventData) {
+    this._socket.emit(eventName, eventData);
   }
 
   get id() {
@@ -35,12 +73,14 @@ module.exports = class Player {
     this._game = game;
   }
 
-  emitEvent(eventName, eventData) {
-    console.log('emit event', eventName, this._id);
-    this._socket.emit(eventName, eventData);
-    console.log('emited');
+  get state() {
+    return this._state;
+  }
+  set state(s) {
+    console.log('change state', s);
+    this._state = s;
+    this.emitEvent(playerEvents.CHANGE_STATE, {
+      state: s
+    });
   }
 };
-
-module.exports.PLAYER_INIT_EVENT = PLAYER_INIT_EVENT;
-module.exports.PLAYER_CONFIRM_EVENT = PLAYER_CONFIRM_EVENT;
